@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "fetch:steam": "tsx scripts/fetch-steam.ts"
+    "fetch:steam": "tsx scripts/fetch-steam.ts",
+    "fetch:trakt": "tsx scripts/fetch-trakt.ts",
+    "trakt:authorize": "tsx scripts/trakt-authorize.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
