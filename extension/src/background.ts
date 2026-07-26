@@ -49,6 +49,8 @@ async function flushQueue(): Promise<void> {
     return;
   }
 
+  console.log(`[Pocrastinados] sending ${queue.length} event(s) to ${ingestUrl}:`, queue);
+
   try {
     const res = await fetch(ingestUrl, {
       method: "POST",
@@ -59,19 +61,33 @@ async function flushQueue(): Promise<void> {
       body: JSON.stringify({ events: queue }),
     });
 
-    if (res.ok) {
-      const result = await res.json().catch(() => null);
-      console.log(`[Pocrastinados] flushed ${queue.length} event(s):`, result);
-      await setQueue([]);
-    } else {
-      const body = await res.text().catch(() => "");
+    const bodyText = await res.text().catch(() => "");
+
+    if (!res.ok) {
       console.error(
-        `[Pocrastinados] ingest request failed: HTTP ${res.status} ${res.statusText} — ${body}. Queue kept for retry.`
+        `[Pocrastinados] ingest request failed: HTTP ${res.status} ${res.statusText} — ${bodyText}. Queue kept for retry.`
+      );
+      return;
+    }
+
+    const result = JSON.parse(bodyText) as { inserted?: number; skipped?: number };
+
+    if (result.skipped) {
+      console.warn(
+        `[Pocrastinados] server rejected ${result.skipped} event(s) as invalid (validation failed server-side) — dropping them: `,
+        queue
       );
     }
+    if (result.inserted) {
+      console.log(`[Pocrastinados] flushed ${result.inserted} event(s).`);
+    }
+
+    // Both inserted and rejected events are done with — retrying rejected
+    // ones would just fail the same way every time.
+    await setQueue([]);
   } catch (error) {
     console.error(
-      "[Pocrastinados] ingest request threw (network/CORS/permission issue). Queue kept for retry.",
+      "[Pocrastinados] ingest request threw (network/CORS/permission issue, or bad JSON response). Queue kept for retry.",
       error
     );
   }
