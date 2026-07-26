@@ -1,4 +1,8 @@
-import { getSteamDashboardData, type GameTotal } from "@/lib/dashboard-data";
+import {
+  getSteamDashboardData,
+  getTraktDashboardData,
+  type BreakdownItem,
+} from "@/lib/dashboard-data";
 import { formatMinutes } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -12,24 +16,21 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GameTable({ title, games }: { title: string; games: GameTotal[] }) {
+function BreakdownList({ title, items }: { title: string; items: BreakdownItem[] }) {
   return (
     <div className="rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {games.length === 0 ? (
+      <h3 className="text-lg font-semibold">{title}</h3>
+      {items.length === 0 ? (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
           Pas encore de données.
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-black/[.06] dark:divide-white/[.08]">
-          {games.map((game) => (
-            <li
-              key={game.appid}
-              className="flex items-center justify-between py-2 text-sm"
-            >
-              <span className="truncate pr-4">{game.name}</span>
+          {items.map((item) => (
+            <li key={item.key} className="flex items-center justify-between py-2 text-sm">
+              <span className="truncate pr-4">{item.label}</span>
               <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
-                {formatMinutes(game.minutes)}
+                {formatMinutes(item.minutes)}
               </span>
             </li>
           ))}
@@ -39,36 +40,26 @@ function GameTable({ title, games }: { title: string; games: GameTotal[] }) {
   );
 }
 
+function ErrorCard({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+      <p className="font-medium">{title}</p>
+      <p className="mt-2">{message}</p>
+    </div>
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Erreur inconnue";
+}
+
 export default async function DashboardPage() {
-  let data;
-  let loadError: string | null = null;
+  const [steamResult, traktResult] = await Promise.allSettled([
+    getSteamDashboardData(),
+    getTraktDashboardData(),
+  ]);
 
-  try {
-    data = await getSteamDashboardData();
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Erreur inconnue";
-  }
-
-  if (loadError || !data) {
-    return (
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-        <h1 className="text-2xl font-semibold">Pocrastinados</h1>
-        <div className="mt-8 rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-          <p className="font-medium">Impossible de charger les données Steam.</p>
-          <p className="mt-2">{loadError}</p>
-          <p className="mt-4 text-red-700 dark:text-red-300">
-            Vérifie que <code>SUPABASE_URL</code> et{" "}
-            <code>SUPABASE_SERVICE_ROLE_KEY</code> sont configurées, que le
-            schéma <code>supabase/schema.sql</code> a été appliqué, et
-            qu&apos;au moins un fetch Steam (<code>npm run fetch:steam</code>)
-            a été exécuté.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  const monthLabel = new Date(data.thisMonth.periodStart).toLocaleDateString("fr-FR", {
+  const monthLabel = new Date().toLocaleDateString("fr-FR", {
     month: "long",
     year: "numeric",
   });
@@ -77,24 +68,78 @@ export default async function DashboardPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
       <h1 className="text-2xl font-semibold">Pocrastinados</h1>
       <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Stats Steam — MVP
+        Stats de divertissement
       </p>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard
-          label="Temps de jeu total (all-time)"
-          value={formatMinutes(data.allTime.totalMinutes)}
-        />
-        <StatCard
-          label={`Ce mois-ci (${monthLabel})`}
-          value={formatMinutes(data.thisMonth.totalMinutes)}
-        />
-      </div>
+      <section className="mt-10">
+        <h2 className="text-xl font-semibold">Jeux vidéo (Steam)</h2>
+        {steamResult.status === "rejected" ? (
+          <div className="mt-4">
+            <ErrorCard
+              title="Impossible de charger les données Steam."
+              message={errorMessage(steamResult.reason)}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <StatCard
+                label="Temps de jeu total (all-time)"
+                value={formatMinutes(steamResult.value.allTime.totalMinutes)}
+              />
+              <StatCard
+                label={`Ce mois-ci (${monthLabel})`}
+                value={formatMinutes(steamResult.value.thisMonth.totalMinutes)}
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4">
+              <BreakdownList
+                title="Répartition par jeu — ce mois-ci"
+                items={steamResult.value.thisMonth.games}
+              />
+              <BreakdownList
+                title="Répartition par jeu — all-time"
+                items={steamResult.value.allTime.games}
+              />
+            </div>
+          </>
+        )}
+      </section>
 
-      <div className="mt-6 grid grid-cols-1 gap-4">
-        <GameTable title="Répartition par jeu — ce mois-ci" games={data.thisMonth.games} />
-        <GameTable title="Répartition par jeu — all-time" games={data.allTime.games} />
-      </div>
+      <section className="mt-10">
+        <h2 className="text-xl font-semibold">Séries &amp; films (Trakt)</h2>
+        {traktResult.status === "rejected" ? (
+          <div className="mt-4">
+            <ErrorCard
+              title="Impossible de charger les données Trakt."
+              message={errorMessage(traktResult.reason)}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <StatCard
+                label="Temps regardé total (all-time)"
+                value={formatMinutes(traktResult.value.allTime.totalMinutes)}
+              />
+              <StatCard
+                label={`Ce mois-ci (${monthLabel})`}
+                value={formatMinutes(traktResult.value.thisMonth.totalMinutes)}
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4">
+              <BreakdownList
+                title="Répartition par série/film — ce mois-ci"
+                items={traktResult.value.thisMonth.items}
+              />
+              <BreakdownList
+                title="Répartition par série/film — all-time"
+                items={traktResult.value.allTime.items}
+              />
+            </div>
+          </>
+        )}
+      </section>
     </main>
   );
 }
