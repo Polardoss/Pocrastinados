@@ -324,3 +324,127 @@ export async function getActivityHeatmap(daysBack = 364): Promise<HeatmapDay[]> 
 
   return days;
 }
+
+export interface WrappedData {
+  monthKey: string;
+  monthLabel: string;
+  totalMinutes: number;
+  steam: { totalMinutes: number; topGame: BreakdownItem | null };
+  trakt: {
+    totalMinutes: number;
+    topItem: BreakdownItem | null;
+    movieCount: number;
+    episodeCount: number;
+  };
+  youtube: { totalMinutes: number; topChannel: BreakdownItem | null; videoCount: number };
+}
+
+export function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function shiftMonthKey(monthKey: string, delta: number): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeyRange(monthKey: string): { start: string; end: string; label: string } {
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!year || !month || month < 1 || month > 12) {
+    throw new Error(`Invalid month key: "${monthKey}" (expected "YYYY-MM")`);
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+  const label = start.toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+  return { start: start.toISOString(), end: end.toISOString(), label };
+}
+
+/**
+ * "Wrapped"-style recap for a single calendar month, combining all three
+ * sources. Reuses the same per-source aggregation helpers as the dashboard,
+ * just scoped to [start, end) instead of "since the start of this month".
+ */
+export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> {
+  const supabase = getSupabaseAdmin();
+  const { start, end, label } = monthKeyRange(monthKey);
+
+  const [steamRes, traktRes, youtubeRes] = await Promise.all([
+    supabase
+      .from("steam_sessions")
+      .select("steam_appid, game_name, minutes_played")
+      .gte("period_end", start)
+      .lt("period_end", end),
+    supabase
+      .from("trakt_watches")
+      .select("title, media_type, show_title, duration_minutes")
+      .gte("watched_at", start)
+      .lt("watched_at", end),
+    supabase
+      .from("youtube_events")
+      .select("channel_name, duration_seconds")
+      .gte("watched_at", start)
+      .lt("watched_at", end),
+  ]);
+
+  if (steamRes.error) {
+    throw new Error(`Failed to load Steam sessions for Wrapped: ${steamRes.error.message}`);
+  }
+  if (traktRes.error) {
+    throw new Error(`Failed to load Trakt watches for Wrapped: ${traktRes.error.message}`);
+  }
+  if (youtubeRes.error) {
+    throw new Error(`Failed to load YouTube events for Wrapped: ${youtubeRes.error.message}`);
+  }
+
+  const steamTotals = new Map<number, BreakdownItem>();
+  for (const row of steamRes.data ?? []) {
+    const existing = steamTotals.get(row.steam_appid);
+    if (existing) {
+      existing.minutes += row.minutes_played;
+    } else {
+      steamTotals.set(row.steam_appid, {
+        key: String(row.steam_appid),
+        label: row.game_name,
+        minutes: row.minutes_played,
+      });
+    }
+  }
+  const steamItems = Array.from(steamTotals.values()).sort((a, b) => b.minutes - a.minutes);
+  const steamTotalMinutes = steamItems.reduce((sum, item) => sum + item.minutes, 0);
+
+  const traktRows = traktRes.data ?? [];
+  const traktItems = aggregateTraktRows(traktRows);
+  const traktTotalMinutes = traktItems.reduce((sum, item) => sum + item.minutes, 0);
+  const movieCount = traktRows.filter((row) => row.media_type === "movie").length;
+  const episodeCount = traktRows.filter((row) => row.media_type === "episode").length;
+
+  const youtubeRows = youtubeRes.data ?? [];
+  const youtubeItems = aggregateYoutubeRows(youtubeRows);
+  const youtubeTotalMinutes = youtubeItems.reduce((sum, item) => sum + item.minutes, 0);
+
+  return {
+    monthKey,
+    monthLabel: label,
+    totalMinutes: steamTotalMinutes + traktTotalMinutes + youtubeTotalMinutes,
+    steam: { totalMinutes: steamTotalMinutes, topGame: steamItems[0] ?? null },
+    trakt: {
+      totalMinutes: traktTotalMinutes,
+      topItem: traktItems[0] ?? null,
+      movieCount,
+      episodeCount,
+    },
+    youtube: {
+      totalMinutes: youtubeTotalMinutes,
+      topChannel: youtubeItems[0] ?? null,
+      videoCount: youtubeRows.length,
+    },
+  };
+}

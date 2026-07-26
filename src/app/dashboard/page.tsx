@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   getActivityHeatmap,
   getSteamDashboardData,
@@ -166,10 +167,20 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <h1 className="text-2xl font-semibold">Pocrastinados</h1>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Stats de divertissement
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Pocrastinados</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Stats de divertissement
+          </p>
+        </div>
+        <Link
+          href="/wrapped"
+          className="shrink-0 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.06]"
+        >
+          Récap du mois →
+        </Link>
+      </div>
 
       <section className="mt-10">
         <h2 className="text-xl font-semibold">Activité globale</h2>
