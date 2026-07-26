@@ -1,10 +1,12 @@
 import {
+  getActivityHeatmap,
   getSteamDashboardData,
   getTraktDashboardData,
   getYoutubeDashboardData,
   type BreakdownItem,
 } from "@/lib/dashboard-data";
 import { formatMinutes } from "@/lib/format";
+import { ActivityHeatmap } from "@/components/activity-heatmap";
 
 export const dynamic = "force-dynamic";
 
@@ -111,10 +113,11 @@ function SourceSection({
 }
 
 export default async function DashboardPage() {
-  const [steamResult, traktResult, youtubeResult] = await Promise.allSettled([
+  const [steamResult, traktResult, youtubeResult, heatmapResult] = await Promise.allSettled([
     getSteamDashboardData(),
     getTraktDashboardData(),
     getYoutubeDashboardData(),
+    getActivityHeatmap(),
   ]);
 
   const steamData: PromiseSettledResult<SourceSectionData> =
@@ -167,6 +170,20 @@ export default async function DashboardPage() {
       <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
         Stats de divertissement
       </p>
+
+      <section className="mt-10">
+        <h2 className="text-xl font-semibold">Activité globale</h2>
+        <div className="mt-4 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
+          {heatmapResult.status === "rejected" ? (
+            <ErrorCard
+              title="Impossible de charger la heatmap d'activité."
+              message={errorMessage(heatmapResult.reason)}
+            />
+          ) : (
+            <ActivityHeatmap days={heatmapResult.value} />
+          )}
+        </div>
+      </section>
 
       <SourceSection
         title="Jeux vidéo (Steam)"

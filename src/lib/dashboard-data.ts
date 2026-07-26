@@ -257,3 +257,70 @@ export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
     },
   };
 }
+
+export interface HeatmapDay {
+  date: string; // YYYY-MM-DD (UTC)
+  minutes: number;
+}
+
+function dayKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/**
+ * Total entertainment minutes per day across all three sources, for the
+ * last `daysBack` days — used to render a GitHub-contributions-style
+ * heatmap. Steam minutes are attributed to the day the fetch happened
+ * (period_end), which is an approximation since a session can span the
+ * gap between two daily cron runs, but it's close enough for a heatmap.
+ */
+export async function getActivityHeatmap(daysBack = 364): Promise<HeatmapDay[]> {
+  const supabase = getSupabaseAdmin();
+
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - daysBack);
+  since.setUTCHours(0, 0, 0, 0);
+  const sinceIso = since.toISOString();
+
+  const [steamRes, traktRes, youtubeRes] = await Promise.all([
+    supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso),
+    supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso),
+    supabase.from("youtube_events").select("duration_seconds, watched_at").gte("watched_at", sinceIso),
+  ]);
+
+  if (steamRes.error) {
+    throw new Error(`Failed to load Steam sessions for heatmap: ${steamRes.error.message}`);
+  }
+  if (traktRes.error) {
+    throw new Error(`Failed to load Trakt watches for heatmap: ${traktRes.error.message}`);
+  }
+  if (youtubeRes.error) {
+    throw new Error(`Failed to load YouTube events for heatmap: ${youtubeRes.error.message}`);
+  }
+
+  const minutesByDay = new Map<string, number>();
+  const addMinutes = (dateIso: string, minutes: number) => {
+    if (minutes <= 0) return;
+    const key = dayKey(dateIso);
+    minutesByDay.set(key, (minutesByDay.get(key) ?? 0) + minutes);
+  };
+
+  for (const row of steamRes.data ?? []) addMinutes(row.period_end, row.minutes_played);
+  for (const row of traktRes.data ?? []) addMinutes(row.watched_at, row.duration_minutes ?? 0);
+  for (const row of youtubeRes.data ?? []) {
+    addMinutes(row.watched_at, (row.duration_seconds ?? 0) / 60);
+  }
+
+  const days: HeatmapDay[] = [];
+  const cursor = new Date(since);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  while (cursor <= today) {
+    const key = cursor.toISOString().slice(0, 10);
+    days.push({ date: key, minutes: Math.round(minutesByDay.get(key) ?? 0) });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return days;
+}
