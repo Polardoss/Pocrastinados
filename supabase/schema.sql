@@ -75,6 +75,19 @@ create table if not exists trakt_watches (
 
 create index if not exists trakt_watches_watched_at_idx on trakt_watches (watched_at desc);
 
+-- Singleton row holding the current Trakt OAuth token pair. Trakt access
+-- tokens last ~90 days and refresh tokens rotate on every use, so instead of
+-- relying on a static env var we persist the live pair here and update it
+-- whenever the token is refreshed. Seeded once by `npm run trakt:authorize`.
+create table if not exists trakt_tokens (
+  id smallint primary key default 1,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  constraint trakt_tokens_singleton check (id = 1)
+);
+
 -- ---------------------------------------------------------------------------
 -- YouTube (pushed by the Chrome extension)
 -- ---------------------------------------------------------------------------
@@ -99,4 +112,5 @@ create index if not exists youtube_events_watched_at_idx on youtube_events (watc
 alter table steam_playtime_snapshots enable row level security;
 alter table steam_sessions enable row level security;
 alter table trakt_watches enable row level security;
+alter table trakt_tokens enable row level security;
 alter table youtube_events enable row level security;
