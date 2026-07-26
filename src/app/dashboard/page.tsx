@@ -3,11 +3,13 @@ import {
   getActivityHeatmap,
   getSteamDashboardData,
   getTraktDashboardData,
+  getWeeklyCategoryBreakdown,
   getYoutubeDashboardData,
   type BreakdownItem,
 } from "@/lib/dashboard-data";
 import { formatMinutes } from "@/lib/format";
 import { ActivityHeatmap } from "@/components/activity-heatmap";
+import { WeeklyBreakdown } from "@/components/weekly-breakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +116,14 @@ function SourceSection({
 }
 
 export default async function DashboardPage() {
-  const [steamResult, traktResult, youtubeResult, heatmapResult] = await Promise.allSettled([
-    getSteamDashboardData(),
-    getTraktDashboardData(),
-    getYoutubeDashboardData(),
-    getActivityHeatmap(),
-  ]);
+  const [steamResult, traktResult, youtubeResult, heatmapResult, weeklyResult] =
+    await Promise.allSettled([
+      getSteamDashboardData(),
+      getTraktDashboardData(),
+      getYoutubeDashboardData(),
+      getActivityHeatmap(),
+      getWeeklyCategoryBreakdown(),
+    ]);
 
   const steamData: PromiseSettledResult<SourceSectionData> =
     steamResult.status === "fulfilled"
@@ -192,6 +196,20 @@ export default async function DashboardPage() {
             />
           ) : (
             <ActivityHeatmap days={heatmapResult.value} />
+          )}
+        </div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-xl font-semibold">Répartition hebdomadaire</h2>
+        <div className="mt-4 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
+          {weeklyResult.status === "rejected" ? (
+            <ErrorCard
+              title="Impossible de charger la répartition hebdomadaire."
+              message={errorMessage(weeklyResult.reason)}
+            />
+          ) : (
+            <WeeklyBreakdown weeks={weeklyResult.value} />
           )}
         </div>
       </section>

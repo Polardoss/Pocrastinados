@@ -448,3 +448,89 @@ export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> 
     },
   };
 }
+
+export interface WeeklyCategoryBreakdown {
+  weekStart: string; // YYYY-MM-DD (Monday, UTC)
+  steamMinutes: number;
+  traktMinutes: number;
+  youtubeMinutes: number;
+}
+
+function mondayOf(date: Date): Date {
+  const monday = new Date(date);
+  monday.setUTCHours(0, 0, 0, 0);
+  const dayOffset = (monday.getUTCDay() + 6) % 7; // 0 = Monday
+  monday.setUTCDate(monday.getUTCDate() - dayOffset);
+  return monday;
+}
+
+/**
+ * Total minutes per category (Steam/Trakt/YouTube) for each of the last
+ * `weeksBack` ISO weeks (Monday-start) — used to show how the mix of
+ * entertainment shifts week over week, as opposed to the heatmap (combined
+ * total per day) or the Wrapped view (single month snapshot).
+ */
+export async function getWeeklyCategoryBreakdown(
+  weeksBack = 8
+): Promise<WeeklyCategoryBreakdown[]> {
+  const supabase = getSupabaseAdmin();
+
+  const currentWeekStart = mondayOf(new Date());
+  const sinceWeekStart = new Date(currentWeekStart);
+  sinceWeekStart.setUTCDate(sinceWeekStart.getUTCDate() - (weeksBack - 1) * 7);
+  const sinceIso = sinceWeekStart.toISOString();
+
+  const [steamRes, traktRes, youtubeRes] = await Promise.all([
+    supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso),
+    supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso),
+    supabase.from("youtube_events").select("duration_seconds, watched_at").gte("watched_at", sinceIso),
+  ]);
+
+  if (steamRes.error) {
+    throw new Error(`Failed to load Steam sessions for weekly breakdown: ${steamRes.error.message}`);
+  }
+  if (traktRes.error) {
+    throw new Error(`Failed to load Trakt watches for weekly breakdown: ${traktRes.error.message}`);
+  }
+  if (youtubeRes.error) {
+    throw new Error(
+      `Failed to load YouTube events for weekly breakdown: ${youtubeRes.error.message}`
+    );
+  }
+
+  const weeks = new Map<string, WeeklyCategoryBreakdown>();
+  for (let i = 0; i < weeksBack; i++) {
+    const weekStart = new Date(sinceWeekStart);
+    weekStart.setUTCDate(weekStart.getUTCDate() + i * 7);
+    const key = weekStart.toISOString().slice(0, 10);
+    weeks.set(key, { weekStart: key, steamMinutes: 0, traktMinutes: 0, youtubeMinutes: 0 });
+  }
+
+  const addTo = (
+    dateIso: string,
+    field: "steamMinutes" | "traktMinutes" | "youtubeMinutes",
+    minutes: number
+  ) => {
+    if (minutes <= 0) return;
+    const key = mondayOf(new Date(dateIso)).toISOString().slice(0, 10);
+    const bucket = weeks.get(key);
+    if (bucket) bucket[field] += minutes;
+  };
+
+  for (const row of steamRes.data ?? []) addTo(row.period_end, "steamMinutes", row.minutes_played);
+  for (const row of traktRes.data ?? []) {
+    addTo(row.watched_at, "traktMinutes", row.duration_minutes ?? 0);
+  }
+  for (const row of youtubeRes.data ?? []) {
+    addTo(row.watched_at, "youtubeMinutes", (row.duration_seconds ?? 0) / 60);
+  }
+
+  return Array.from(weeks.values())
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+    .map((week) => ({
+      ...week,
+      steamMinutes: Math.round(week.steamMinutes),
+      traktMinutes: Math.round(week.traktMinutes),
+      youtubeMinutes: Math.round(week.youtubeMinutes),
+    }));
+}
