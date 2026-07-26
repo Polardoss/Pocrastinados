@@ -10,7 +10,8 @@
     "fetch:steam": "tsx scripts/fetch-steam.ts",
     "fetch:trakt": "tsx scripts/fetch-trakt.ts",
     "trakt:authorize": "tsx scripts/trakt-authorize.ts",
-    "build:extension": "tsx scripts/build-extension.ts"
+    "build:extension": "tsx scripts/build-extension.ts",
+    "import:youtube-history": "tsx scripts/import-youtube-takeout.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
