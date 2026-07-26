@@ -43,6 +43,18 @@ create table if not exists steam_sessions (
 create index if not exists steam_sessions_period_end_idx on steam_sessions (period_end desc);
 create index if not exists steam_sessions_appid_idx on steam_sessions (steam_appid);
 
+-- Latest snapshot per game, used by the fetch job to compute the delta
+-- against the previous run without scanning the whole snapshot history.
+create or replace view steam_latest_snapshots as
+select distinct on (steam_appid)
+  steam_appid,
+  game_name,
+  icon_url,
+  playtime_forever_minutes,
+  captured_at
+from steam_playtime_snapshots
+order by steam_appid, captured_at desc;
+
 -- ---------------------------------------------------------------------------
 -- Trakt (movies / TV episodes)
 -- ---------------------------------------------------------------------------
