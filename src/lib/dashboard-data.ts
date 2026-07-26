@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export interface BreakdownItem {
   key: string;
   label: string;
+  sublabel?: string;
   minutes: number;
 }
 
@@ -188,23 +189,37 @@ export interface YoutubeDashboardData {
 }
 
 interface YoutubeEventRow {
+  video_url: string | null;
+  video_title: string;
   channel_name: string | null;
   duration_seconds: number | null;
 }
 
+const YOUTUBE_EVENT_COLUMNS = "video_url, video_title, channel_name, duration_seconds";
+
+/**
+ * Groups by video, not by row: the extension reports a chunk every ~60s
+ * while a video plays (see content.ts), so a single 8-minute video
+ * produces ~8 rows. Grouping by video_url (falling back to the title)
+ * collapses those back into one entry before anything gets counted.
+ */
 function aggregateYoutubeRows(rows: YoutubeEventRow[]): BreakdownItem[] {
   const totals = new Map<string, BreakdownItem>();
 
   for (const row of rows) {
-    const label = row.channel_name?.trim() || "Chaîne inconnue";
-    const key = `channel:${label}`;
+    const key = row.video_url?.trim() || `title:${row.video_title}`;
     const minutes = (row.duration_seconds ?? 0) / 60;
 
     const existing = totals.get(key);
     if (existing) {
       existing.minutes += minutes;
     } else {
-      totals.set(key, { key, label, minutes });
+      totals.set(key, {
+        key,
+        label: row.video_title,
+        sublabel: row.channel_name?.trim() || undefined,
+        minutes,
+      });
     }
   }
 
@@ -214,16 +229,18 @@ function aggregateYoutubeRows(rows: YoutubeEventRow[]): BreakdownItem[] {
 }
 
 /**
- * Events are pushed by the Chrome extension (see /api/ingest/youtube), one
- * per video watched, already deduplicated at the source. Like Trakt, this
- * is an append-only log so "this month" is just a date filter.
+ * Events are pushed by the Chrome extension (see /api/ingest/youtube).
+ * Like Trakt, this is an append-only log so "this month" is just a date
+ * filter — but unlike Trakt, rows aren't one-per-video (see
+ * aggregateYoutubeRows), so video counts must come from the grouped
+ * result, never from raw row counts.
  */
 export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
   const supabase = getSupabaseAdmin();
 
   const { data: allRows, error: allError } = await supabase
     .from("youtube_events")
-    .select("channel_name, duration_seconds");
+    .select(YOUTUBE_EVENT_COLUMNS);
 
   if (allError) {
     throw new Error(`Failed to load YouTube events: ${allError.message}`);
@@ -233,7 +250,7 @@ export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
 
   const { data: monthRows, error: monthError } = await supabase
     .from("youtube_events")
-    .select("channel_name, duration_seconds")
+    .select(YOUTUBE_EVENT_COLUMNS)
     .gte("watched_at", monthStart);
 
   if (monthError) {
@@ -246,12 +263,12 @@ export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
   return {
     allTime: {
       totalMinutes: allTimeItems.reduce((sum, item) => sum + item.minutes, 0),
-      totalVideos: allRows?.length ?? 0,
+      totalVideos: allTimeItems.length,
       items: allTimeItems.slice(0, 15),
     },
     thisMonth: {
       totalMinutes: monthItems.reduce((sum, item) => sum + item.minutes, 0),
-      totalVideos: monthRows?.length ?? 0,
+      totalVideos: monthItems.length,
       items: monthItems.slice(0, 15),
       periodStart: monthStart,
     },
@@ -336,7 +353,7 @@ export interface WrappedData {
     movieCount: number;
     episodeCount: number;
   };
-  youtube: { totalMinutes: number; topChannel: BreakdownItem | null; videoCount: number };
+  youtube: { totalMinutes: number; topVideo: BreakdownItem | null; videoCount: number };
 }
 
 export function currentMonthKey(): string {
@@ -389,7 +406,7 @@ export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> 
       .lt("watched_at", end),
     supabase
       .from("youtube_events")
-      .select("channel_name, duration_seconds")
+      .select(YOUTUBE_EVENT_COLUMNS)
       .gte("watched_at", start)
       .lt("watched_at", end),
   ]);
@@ -443,8 +460,8 @@ export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> 
     },
     youtube: {
       totalMinutes: youtubeTotalMinutes,
-      topChannel: youtubeItems[0] ?? null,
-      videoCount: youtubeRows.length,
+      topVideo: youtubeItems[0] ?? null,
+      videoCount: youtubeItems.length,
     },
   };
 }

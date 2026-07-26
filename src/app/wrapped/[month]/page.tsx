@@ -107,9 +107,13 @@ export default async function WrappedPage({
             />
             <RecapCard
               source="youtube"
-              label="Chaîne #1 — YouTube"
-              value={data.youtube.topChannel?.label ?? "—"}
-              detail={`${data.youtube.videoCount} vidéo(s)`}
+              label="Vidéo #1 — YouTube"
+              value={data.youtube.topVideo?.label ?? "—"}
+              detail={
+                data.youtube.topVideo?.sublabel
+                  ? `${data.youtube.topVideo.sublabel} · ${data.youtube.videoCount} vidéo(s) au total`
+                  : `${data.youtube.videoCount} vidéo(s) au total`
+              }
             />
           </div>
         </div>

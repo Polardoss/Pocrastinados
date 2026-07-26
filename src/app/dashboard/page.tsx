@@ -68,9 +68,12 @@ function RankRow({ rank, entry }: { rank: number; entry: RankedEntry }) {
       >
         {rank}
       </span>
-      <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: `var(--${entry.source})` }} />
-      <span className="flex-1 truncate text-sm">{entry.label}</span>
-      <span className="font-mono text-xs text-ink-muted">{formatMinutes(entry.minutes)}</span>
+      <span className="mt-1 h-1.5 w-1.5 flex-none self-start rounded-full" style={{ background: `var(--${entry.source})` }} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{entry.label}</p>
+        {entry.sublabel && <p className="truncate text-[10px] text-ink-faint">{entry.sublabel}</p>}
+      </div>
+      <span className="flex-none font-mono text-xs text-ink-muted">{formatMinutes(entry.minutes)}</span>
     </div>
   );
 }
@@ -101,7 +104,10 @@ function SourceBoard({
             ) : (
               result.value.topItems.map((item) => (
                 <div key={item.key} className="flex items-center justify-between gap-3 py-1.5 text-xs">
-                  <span className="truncate text-ink">{item.label}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-ink">{item.label}</p>
+                    {item.sublabel && <p className="truncate text-[10px] text-ink-faint">{item.sublabel}</p>}
+                  </div>
                   <span className="flex-none font-mono text-ink-muted">{formatMinutes(item.minutes)}</span>
                 </div>
               ))
