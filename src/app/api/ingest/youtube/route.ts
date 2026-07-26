@@ -3,6 +3,24 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
+// The caller is a Chrome extension background worker (an opaque
+// chrome-extension:// origin), not a browser page we can allowlist by
+// origin — auth is handled by the bearer secret below, so CORS is opened
+// wide here rather than restricted by origin.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: CORS_HEADERS });
+}
+
 interface IncomingEvent {
   videoTitle?: unknown;
   channelName?: unknown;
@@ -44,23 +62,23 @@ function validateEvent(event: IncomingEvent): ValidatedEvent | null {
 export async function POST(request: Request) {
   const ingestSecret = process.env.YOUTUBE_INGEST_SECRET;
   if (!ingestSecret) {
-    return NextResponse.json({ error: "YOUTUBE_INGEST_SECRET is not configured" }, { status: 500 });
+    return json({ error: "YOUTUBE_INGEST_SECRET is not configured" }, 500);
   }
 
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${ingestSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return json({ error: "Unauthorized" }, 401);
   }
 
   let body: { events?: unknown };
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return json({ error: "Invalid JSON body" }, 400);
   }
 
   if (!Array.isArray(body.events)) {
-    return NextResponse.json({ error: "Expected { events: [...] }" }, { status: 400 });
+    return json({ error: "Expected { events: [...] }" }, 400);
   }
 
   const validated = body.events.map((event) => validateEvent(event as IncomingEvent));
@@ -68,7 +86,7 @@ export async function POST(request: Request) {
   const skipped = validated.length - rows.length;
 
   if (rows.length === 0) {
-    return NextResponse.json({ ok: true, inserted: 0, skipped });
+    return json({ ok: true, inserted: 0, skipped });
   }
 
   const supabase = getSupabaseAdmin();
@@ -76,8 +94,8 @@ export async function POST(request: Request) {
 
   if (error) {
     console.error("YouTube ingestion insert failed:", error);
-    return NextResponse.json({ error: "Failed to store events" }, { status: 500 });
+    return json({ error: "Failed to store events" }, 500);
   }
 
-  return NextResponse.json({ ok: true, inserted: rows.length, skipped });
+  return json({ ok: true, inserted: rows.length, skipped });
 }

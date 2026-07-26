@@ -4,7 +4,11 @@
   "version": "0.1.0",
   "description": "Observe localement les vidéos YouTube regardées et envoie les events vers le dashboard Pocrastinados.",
   "permissions": ["storage", "alarms"],
-  "host_permissions": ["*://*.youtube.com/*"],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "https://*.vercel.app/*",
+    "http://localhost:3000/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

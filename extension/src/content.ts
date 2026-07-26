@@ -13,6 +13,7 @@ interface WatchSession {
 }
 
 const SAMPLE_INTERVAL_MS = 5000;
+const REPORT_INTERVAL_MS = 60000; // send a chunk at least this often, even mid-video
 const MIN_REPORTABLE_SECONDS = 5;
 
 let currentSession: WatchSession | null = null;
@@ -35,23 +36,34 @@ function getChannelName(): string {
   return channelEl?.textContent?.trim() || "";
 }
 
+function reportChunk(session: WatchSession): void {
+  if (session.watchedSeconds < MIN_REPORTABLE_SECONDS) return;
+
+  chrome.runtime.sendMessage({
+    type: "youtube-watch-event",
+    payload: {
+      videoTitle: session.title,
+      channelName: session.channel,
+      videoUrl: session.url,
+      durationSeconds: Math.round(session.watchedSeconds),
+      watchedAt: new Date().toISOString(),
+    },
+  });
+}
+
+// Sends whatever has accumulated and ends the session (video changed, tab closing).
 function finalizeSession(): void {
   if (!currentSession) return;
-
-  if (currentSession.watchedSeconds >= MIN_REPORTABLE_SECONDS) {
-    chrome.runtime.sendMessage({
-      type: "youtube-watch-event",
-      payload: {
-        videoTitle: currentSession.title,
-        channelName: currentSession.channel,
-        videoUrl: currentSession.url,
-        durationSeconds: Math.round(currentSession.watchedSeconds),
-        watchedAt: new Date().toISOString(),
-      },
-    });
-  }
-
+  reportChunk(currentSession);
   currentSession = null;
+}
+
+// Sends whatever has accumulated so far but keeps the session open, so a
+// single long video still shows up without waiting for it to end.
+function flushChunk(): void {
+  if (!currentSession || currentSession.watchedSeconds === 0) return;
+  reportChunk(currentSession);
+  currentSession.watchedSeconds = 0;
 }
 
 function sampleWatchTime(): void {
@@ -89,6 +101,7 @@ function sampleWatchTime(): void {
 }
 
 setInterval(sampleWatchTime, SAMPLE_INTERVAL_MS);
+setInterval(flushChunk, REPORT_INTERVAL_MS);
 window.addEventListener("beforeunload", finalizeSession);
 // Fired by YouTube's own router on SPA navigation between videos.
 document.addEventListener("yt-navigate-finish", () => {
