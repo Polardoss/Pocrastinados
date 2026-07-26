@@ -19,7 +19,13 @@ const MIN_REPORTABLE_SECONDS = 5;
 let currentSession: WatchSession | null = null;
 
 function getVideoIdFromUrl(): string | null {
-  return new URL(location.href).searchParams.get("v");
+  const url = new URL(location.href);
+  const watchId = url.searchParams.get("v");
+  if (watchId) return watchId;
+
+  // Shorts don't use a ?v= param — the id is the path segment instead.
+  const shortsMatch = url.pathname.match(/^\/shorts\/([\w-]+)/);
+  return shortsMatch ? shortsMatch[1] : null;
 }
 
 function getVideoTitle(): string {
@@ -37,7 +43,14 @@ function getChannelName(): string {
 }
 
 function reportChunk(session: WatchSession): void {
-  if (session.watchedSeconds < MIN_REPORTABLE_SECONDS) return;
+  if (session.watchedSeconds < MIN_REPORTABLE_SECONDS) {
+    console.log(
+      `[Pocrastinados] chunk too short to report (${session.watchedSeconds.toFixed(1)}s < ${MIN_REPORTABLE_SECONDS}s) for "${session.title}"`
+    );
+    return;
+  }
+
+  console.log(`[Pocrastinados] reporting ${Math.round(session.watchedSeconds)}s for "${session.title}"`);
 
   chrome.runtime.sendMessage({
     type: "youtube-watch-event",
@@ -81,10 +94,11 @@ function sampleWatchTime(): void {
       videoId,
       title: getVideoTitle(),
       channel: getChannelName(),
-      url: `https://www.youtube.com/watch?v=${videoId}`,
+      url: location.href,
       watchedSeconds: 0,
       lastSampledAt: Date.now(),
     };
+    console.log(`[Pocrastinados] now tracking "${currentSession.title}" (${videoId})`);
   }
 
   // Title/channel metadata can load in async after the first sample.
@@ -99,6 +113,8 @@ function sampleWatchTime(): void {
     currentSession.watchedSeconds += elapsedSeconds;
   }
 }
+
+console.log("[Pocrastinados] content script active on", location.href);
 
 setInterval(sampleWatchTime, SAMPLE_INTERVAL_MS);
 setInterval(flushChunk, REPORT_INTERVAL_MS);
