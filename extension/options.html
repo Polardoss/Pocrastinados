@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pocrastinados</title>
+    <style>
+      body {
+        font-family: -apple-system, Arial, sans-serif;
+        padding: 16px;
+        min-width: 280px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #333;
+      }
+      input {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 6px;
+        box-sizing: border-box;
+        font-size: 13px;
+      }
+      button {
+        margin-top: 14px;
+        padding: 6px 14px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      #status {
+        font-size: 12px;
+        color: #16a34a;
+        height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pocrastinados — YouTube tracker</h1>
+    <label>
+      Ingest URL
+      <input
+        id="ingestUrl"
+        type="url"
+        placeholder="https://ton-app.vercel.app/api/ingest/youtube"
+      />
+    </label>
+    <label>
+      Secret
+      <input id="ingestSecret" type="password" placeholder="YOUTUBE_INGEST_SECRET" />
+    </label>
+    <button id="save">Enregistrer</button>
+    <p id="status"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Pocrastinados — YouTube tracker",
+  "version": "0.1.0",
+  "description": "Observe localement les vidéos YouTube regardées et envoie les events vers le dashboard Pocrastinados.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["*://*.youtube.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "options.html",
+    "default_title": "Pocrastinados"
+  },
+  "options_page": "options.html"
+}
