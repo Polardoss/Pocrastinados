@@ -13,45 +13,42 @@ import { WeeklyBreakdown } from "@/components/weekly-breakdown";
 
 export const dynamic = "force-dynamic";
 
-function StatCard({ label, value }: { label: string; value: string }) {
+type SourceKey = "steam" | "trakt" | "youtube";
+
+const SOURCE_LABEL: Record<SourceKey, string> = {
+  steam: "Steam",
+  trakt: "Trakt",
+  youtube: "YouTube",
+};
+
+interface RankedEntry extends BreakdownItem {
+  source: SourceKey;
+}
+
+function Board({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
+    <div
+      className={`rounded-2xl border border-line bg-surface p-5 sm:p-6 ${className}`}
+    >
+      <h2 className="arcade-display text-[11px] tracking-[0.16em] text-ink-muted">{title}</h2>
+      <div className="mt-3">{children}</div>
     </div>
   );
 }
 
-function BreakdownList({ title, items }: { title: string; items: BreakdownItem[] }) {
+function ErrorNote({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
-      <h3 className="text-lg font-semibold">{title}</h3>
-      {items.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-          Pas encore de données.
-        </p>
-      ) : (
-        <ul className="mt-4 divide-y divide-black/[.06] dark:divide-white/[.08]">
-          {items.map((item) => (
-            <li key={item.key} className="flex items-center justify-between py-2 text-sm">
-              <span className="truncate pr-4">{item.label}</span>
-              <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
-                {formatMinutes(item.minutes)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function ErrorCard({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-      <p className="font-medium">{title}</p>
-      <p className="mt-2">{message}</p>
-    </div>
+    <p className="rounded-lg border border-pop/30 bg-pop/10 px-3 py-2 text-xs text-ink-muted">
+      Erreur : {message}
+    </p>
   );
 }
 
@@ -59,59 +56,60 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Erreur inconnue";
 }
 
-interface SourceSectionData {
-  totalMinutesAllTime: number;
-  totalMinutesMonth: number;
-  allTimeItems: BreakdownItem[];
-  monthItems: BreakdownItem[];
+function RankRow({ rank, entry }: { rank: number; entry: RankedEntry }) {
+  const isTop = rank === 1;
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <span
+        className={`flex h-6 w-6 flex-none items-center justify-center rounded-md border font-mono text-xs font-bold ${
+          isTop ? "border-accent bg-accent text-[#241a02]" : "border-line bg-surface-2 text-ink-muted"
+        }`}
+        style={isTop ? { boxShadow: "0 0 12px color-mix(in srgb, var(--accent) 55%, transparent)" } : undefined}
+      >
+        {rank}
+      </span>
+      <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: `var(--${entry.source})` }} />
+      <span className="flex-1 truncate text-sm">{entry.label}</span>
+      <span className="font-mono text-xs text-ink-muted">{formatMinutes(entry.minutes)}</span>
+    </div>
+  );
 }
 
-function SourceSection({
-  title,
-  breakdownLabel,
-  monthLabel,
+function SourceBoard({
+  source,
   result,
 }: {
-  title: string;
-  breakdownLabel: string;
-  monthLabel: string;
-  result: PromiseSettledResult<SourceSectionData>;
+  source: SourceKey;
+  result: PromiseSettledResult<{ totalMinutes: number; totalCount: number; topItems: BreakdownItem[] }>;
 }) {
   return (
-    <section className="mt-10">
-      <h2 className="text-xl font-semibold">{title}</h2>
+    <Board title={SOURCE_LABEL[source]}>
       {result.status === "rejected" ? (
-        <div className="mt-4">
-          <ErrorCard
-            title={`Impossible de charger les données ${title}.`}
-            message={errorMessage(result.reason)}
-          />
-        </div>
+        <ErrorNote message={errorMessage(result.reason)} />
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StatCard
-              label="Temps total (all-time)"
-              value={formatMinutes(result.value.totalMinutesAllTime)}
-            />
-            <StatCard
-              label={`Ce mois-ci (${monthLabel})`}
-              value={formatMinutes(result.value.totalMinutesMonth)}
-            />
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-4">
-            <BreakdownList
-              title={`${breakdownLabel} — ce mois-ci`}
-              items={result.value.monthItems}
-            />
-            <BreakdownList
-              title={`${breakdownLabel} — all-time`}
-              items={result.value.allTimeItems}
-            />
+          <p
+            className="font-mono text-2xl font-semibold"
+            style={{ color: `var(--${source})` }}
+          >
+            {formatMinutes(result.value.totalMinutes)}
+          </p>
+          <p className="mt-0.5 text-xs text-ink-faint">all-time · {result.value.totalCount} entrée(s)</p>
+          <div className="mt-3 divide-y divide-line/60">
+            {result.value.topItems.length === 0 ? (
+              <p className="py-2 text-xs text-ink-muted">Pas encore de données.</p>
+            ) : (
+              result.value.topItems.map((item) => (
+                <div key={item.key} className="flex items-center justify-between gap-3 py-1.5 text-xs">
+                  <span className="truncate text-ink">{item.label}</span>
+                  <span className="flex-none font-mono text-ink-muted">{formatMinutes(item.minutes)}</span>
+                </div>
+              ))
+            )}
           </div>
         </>
       )}
-    </section>
+    </Board>
   );
 }
 
@@ -125,113 +123,119 @@ export default async function DashboardPage() {
       getWeeklyCategoryBreakdown(),
     ]);
 
-  const steamData: PromiseSettledResult<SourceSectionData> =
+  const monthLabel = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+
+  const thisMonthTotal =
+    (steamResult.status === "fulfilled" ? steamResult.value.thisMonth.totalMinutes : 0) +
+    (traktResult.status === "fulfilled" ? traktResult.value.thisMonth.totalMinutes : 0) +
+    (youtubeResult.status === "fulfilled" ? youtubeResult.value.thisMonth.totalMinutes : 0);
+
+  const leaderboard: RankedEntry[] = [
+    ...(steamResult.status === "fulfilled"
+      ? steamResult.value.thisMonth.games.map((g) => ({ ...g, source: "steam" as const }))
+      : []),
+    ...(traktResult.status === "fulfilled"
+      ? traktResult.value.thisMonth.items.map((i) => ({ ...i, source: "trakt" as const }))
+      : []),
+    ...(youtubeResult.status === "fulfilled"
+      ? youtubeResult.value.thisMonth.items.map((i) => ({ ...i, source: "youtube" as const }))
+      : []),
+  ]
+    .sort((a, b) => b.minutes - a.minutes)
+    .slice(0, 6);
+
+  const steamBoardResult: PromiseSettledResult<{ totalMinutes: number; totalCount: number; topItems: BreakdownItem[] }> =
     steamResult.status === "fulfilled"
       ? {
           status: "fulfilled",
           value: {
-            totalMinutesAllTime: steamResult.value.allTime.totalMinutes,
-            totalMinutesMonth: steamResult.value.thisMonth.totalMinutes,
-            allTimeItems: steamResult.value.allTime.games,
-            monthItems: steamResult.value.thisMonth.games,
+            totalMinutes: steamResult.value.allTime.totalMinutes,
+            totalCount: steamResult.value.allTime.games.length,
+            topItems: steamResult.value.allTime.games.slice(0, 6),
           },
         }
       : steamResult;
 
-  const traktData: PromiseSettledResult<SourceSectionData> =
+  const traktBoardResult: PromiseSettledResult<{ totalMinutes: number; totalCount: number; topItems: BreakdownItem[] }> =
     traktResult.status === "fulfilled"
       ? {
           status: "fulfilled",
           value: {
-            totalMinutesAllTime: traktResult.value.allTime.totalMinutes,
-            totalMinutesMonth: traktResult.value.thisMonth.totalMinutes,
-            allTimeItems: traktResult.value.allTime.items,
-            monthItems: traktResult.value.thisMonth.items,
+            totalMinutes: traktResult.value.allTime.totalMinutes,
+            totalCount: traktResult.value.allTime.totalItems,
+            topItems: traktResult.value.allTime.items.slice(0, 6),
           },
         }
       : traktResult;
 
-  const youtubeData: PromiseSettledResult<SourceSectionData> =
+  const youtubeBoardResult: PromiseSettledResult<{ totalMinutes: number; totalCount: number; topItems: BreakdownItem[] }> =
     youtubeResult.status === "fulfilled"
       ? {
           status: "fulfilled",
           value: {
-            totalMinutesAllTime: youtubeResult.value.allTime.totalMinutes,
-            totalMinutesMonth: youtubeResult.value.thisMonth.totalMinutes,
-            allTimeItems: youtubeResult.value.allTime.items,
-            monthItems: youtubeResult.value.thisMonth.items,
+            totalMinutes: youtubeResult.value.allTime.totalMinutes,
+            totalCount: youtubeResult.value.allTime.totalVideos,
+            topItems: youtubeResult.value.allTime.items.slice(0, 6),
           },
         }
       : youtubeResult;
 
-  const monthLabel = new Date().toLocaleDateString("fr-FR", {
-    month: "long",
-    year: "numeric",
-  });
-
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Pocrastinados</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Stats de divertissement
-          </p>
-        </div>
+    <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-14 sm:px-6">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="arcade-display text-lg">Pocrastinados</h1>
         <Link
           href="/wrapped"
-          className="shrink-0 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.06]"
+          className="arcade-display flex-none rounded-full border border-pop/50 px-4 py-2 text-[11px] tracking-wide text-pop transition-colors hover:bg-pop/10"
         >
           Récap du mois →
         </Link>
       </div>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">Activité globale</h2>
-        <div className="mt-4 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
-          {heatmapResult.status === "rejected" ? (
-            <ErrorCard
-              title="Impossible de charger la heatmap d'activité."
-              message={errorMessage(heatmapResult.reason)}
-            />
-          ) : (
-            <ActivityHeatmap days={heatmapResult.value} />
-          )}
-        </div>
-      </section>
+      <div
+        className="mt-6 rounded-2xl border border-line bg-gradient-to-b from-surface-2 to-surface p-8 text-center"
+        style={{ boxShadow: "0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent), 0 24px 60px -30px color-mix(in srgb, var(--pop) 40%, transparent)" }}
+      >
+        <p className="arcade-display text-[11px] tracking-[0.3em] text-pop">High Score — {monthLabel}</p>
+        <p className="arcade-glow arcade-display mt-2 font-mono text-5xl text-accent sm:text-6xl">
+          {formatMinutes(thisMonthTotal).toUpperCase()}
+        </p>
+        <p className="mt-2 text-sm text-ink-muted">de divertissement cumulé ce mois-ci</p>
+      </div>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">Répartition hebdomadaire</h2>
-        <div className="mt-4 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-[#111]">
-          {weeklyResult.status === "rejected" ? (
-            <ErrorCard
-              title="Impossible de charger la répartition hebdomadaire."
-              message={errorMessage(weeklyResult.reason)}
-            />
-          ) : (
-            <WeeklyBreakdown weeks={weeklyResult.value} />
-          )}
-        </div>
-      </section>
+      <Board title="🏆 Classement du mois" className="mt-6">
+        {leaderboard.length === 0 ? (
+          <p className="text-sm text-ink-muted">Pas encore de données ce mois-ci.</p>
+        ) : (
+          <div className="divide-y divide-line/60">
+            {leaderboard.map((entry, i) => (
+              <RankRow key={entry.key} rank={i + 1} entry={entry} />
+            ))}
+          </div>
+        )}
+      </Board>
 
-      <SourceSection
-        title="Jeux vidéo (Steam)"
-        breakdownLabel="Répartition par jeu"
-        monthLabel={monthLabel}
-        result={steamData}
-      />
-      <SourceSection
-        title="Séries & films (Trakt)"
-        breakdownLabel="Répartition par série/film"
-        monthLabel={monthLabel}
-        result={traktData}
-      />
-      <SourceSection
-        title="YouTube"
-        breakdownLabel="Répartition par chaîne"
-        monthLabel={monthLabel}
-        result={youtubeData}
-      />
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <SourceBoard source="steam" result={steamBoardResult} />
+        <SourceBoard source="trakt" result={traktBoardResult} />
+        <SourceBoard source="youtube" result={youtubeBoardResult} />
+      </div>
+
+      <Board title="Équaliseur hebdomadaire" className="mt-6">
+        {weeklyResult.status === "rejected" ? (
+          <ErrorNote message={errorMessage(weeklyResult.reason)} />
+        ) : (
+          <WeeklyBreakdown weeks={weeklyResult.value} />
+        )}
+      </Board>
+
+      <Board title="Combo d'activité — 52 semaines" className="mt-6">
+        {heatmapResult.status === "rejected" ? (
+          <ErrorNote message={errorMessage(heatmapResult.reason)} />
+        ) : (
+          <ActivityHeatmap days={heatmapResult.value} />
+        )}
+      </Board>
     </main>
   );
 }

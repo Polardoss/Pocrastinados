@@ -1,26 +1,52 @@
 @import "tailwindcss";
 
+/* "Arcade" theme — a deliberate single dark world (marquee/high-score
+   aesthetic), not a light/dark pair. See design pitch for the other two
+   directions that were considered. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --background: #0a0713;
+  --foreground: #f6f2ff;
+  --surface: #150f24;
+  --surface-2: #1b1430;
+  --ink-muted: #8f85ab;
+  --ink-faint: #5b5478;
+  --line: #2a2145;
+  --accent: #ffd23f;
+  --pop: #ff17a1;
+  --steam: #3987e5;
+  --trakt: #d95926;
+  --youtube: #199e70;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-pop: var(--pop);
+  --color-steam: var(--steam);
+  --color-trakt: var(--trakt);
+  --color-youtube: var(--youtube);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: radial-gradient(120% 100% at 50% -10%, #1a1030 0%, var(--background) 55%) fixed;
+  color: var(--foreground);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.arcade-display {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+}
+
+.arcade-glow {
+  text-shadow: 0 0 18px rgba(255, 210, 63, 0.55), 0 0 44px rgba(255, 210, 63, 0.25);
 }
