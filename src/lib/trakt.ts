@@ -3,6 +3,8 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 const TRAKT_API_BASE = "https://api.trakt.tv";
 const TOKEN_REFRESH_BUFFER_MS = 3 * 24 * 60 * 60 * 1000; // refresh 3 days before expiry
 const MAX_HISTORY_PAGES = 50; // safety cap: 50 pages * 100 items = 5000 items per run
+// Trakt's Cloudflare bot protection 403s any request with no User-Agent header.
+const TRAKT_USER_AGENT = "Pocrastinados/0.1 (+https://github.com/Polardoss/Pocrastinados)";
 
 interface TraktTokenRow {
   access_token: string;
@@ -100,7 +102,7 @@ async function refreshTokens(refreshToken: string): Promise<TraktTokenResponse> 
 
   const res = await fetch(`${TRAKT_API_BASE}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "User-Agent": TRAKT_USER_AGENT },
     body: JSON.stringify({
       refresh_token: refreshToken,
       client_id: clientId,
@@ -161,6 +163,7 @@ async function fetchHistoryPage(
       "trakt-api-version": "2",
       "trakt-api-key": clientId,
       Authorization: `Bearer ${accessToken}`,
+      "User-Agent": TRAKT_USER_AGENT,
     },
     cache: "no-store",
   });

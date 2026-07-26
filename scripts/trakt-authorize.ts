@@ -13,6 +13,8 @@ config({ path: ".env.local" });
 config();
 
 const TRAKT_API_BASE = "https://api.trakt.tv";
+// Trakt's Cloudflare bot protection 403s any request with no User-Agent header.
+const TRAKT_USER_AGENT = "Pocrastinados/0.1 (+https://github.com/Polardoss/Pocrastinados)";
 
 interface DeviceCodeResponse {
   device_code: string;
@@ -35,7 +37,7 @@ function sleep(ms: number): Promise<void> {
 async function requestDeviceCode(clientId: string): Promise<DeviceCodeResponse> {
   const res = await fetch(`${TRAKT_API_BASE}/oauth/device/code`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "User-Agent": TRAKT_USER_AGENT },
     body: JSON.stringify({ client_id: clientId }),
   });
 
@@ -60,7 +62,7 @@ async function pollForToken(
 
     const res = await fetch(`${TRAKT_API_BASE}/oauth/device/token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "User-Agent": TRAKT_USER_AGENT },
       body: JSON.stringify({
         code: deviceCode,
         client_id: clientId,
