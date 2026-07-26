@@ -1,6 +1,7 @@
 import {
   getSteamDashboardData,
   getTraktDashboardData,
+  getYoutubeDashboardData,
   type BreakdownItem,
 } from "@/lib/dashboard-data";
 import { formatMinutes } from "@/lib/format";
@@ -53,11 +54,107 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Erreur inconnue";
 }
 
+interface SourceSectionData {
+  totalMinutesAllTime: number;
+  totalMinutesMonth: number;
+  allTimeItems: BreakdownItem[];
+  monthItems: BreakdownItem[];
+}
+
+function SourceSection({
+  title,
+  breakdownLabel,
+  monthLabel,
+  result,
+}: {
+  title: string;
+  breakdownLabel: string;
+  monthLabel: string;
+  result: PromiseSettledResult<SourceSectionData>;
+}) {
+  return (
+    <section className="mt-10">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      {result.status === "rejected" ? (
+        <div className="mt-4">
+          <ErrorCard
+            title={`Impossible de charger les données ${title}.`}
+            message={errorMessage(result.reason)}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StatCard
+              label="Temps total (all-time)"
+              value={formatMinutes(result.value.totalMinutesAllTime)}
+            />
+            <StatCard
+              label={`Ce mois-ci (${monthLabel})`}
+              value={formatMinutes(result.value.totalMinutesMonth)}
+            />
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <BreakdownList
+              title={`${breakdownLabel} — ce mois-ci`}
+              items={result.value.monthItems}
+            />
+            <BreakdownList
+              title={`${breakdownLabel} — all-time`}
+              items={result.value.allTimeItems}
+            />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default async function DashboardPage() {
-  const [steamResult, traktResult] = await Promise.allSettled([
+  const [steamResult, traktResult, youtubeResult] = await Promise.allSettled([
     getSteamDashboardData(),
     getTraktDashboardData(),
+    getYoutubeDashboardData(),
   ]);
+
+  const steamData: PromiseSettledResult<SourceSectionData> =
+    steamResult.status === "fulfilled"
+      ? {
+          status: "fulfilled",
+          value: {
+            totalMinutesAllTime: steamResult.value.allTime.totalMinutes,
+            totalMinutesMonth: steamResult.value.thisMonth.totalMinutes,
+            allTimeItems: steamResult.value.allTime.games,
+            monthItems: steamResult.value.thisMonth.games,
+          },
+        }
+      : steamResult;
+
+  const traktData: PromiseSettledResult<SourceSectionData> =
+    traktResult.status === "fulfilled"
+      ? {
+          status: "fulfilled",
+          value: {
+            totalMinutesAllTime: traktResult.value.allTime.totalMinutes,
+            totalMinutesMonth: traktResult.value.thisMonth.totalMinutes,
+            allTimeItems: traktResult.value.allTime.items,
+            monthItems: traktResult.value.thisMonth.items,
+          },
+        }
+      : traktResult;
+
+  const youtubeData: PromiseSettledResult<SourceSectionData> =
+    youtubeResult.status === "fulfilled"
+      ? {
+          status: "fulfilled",
+          value: {
+            totalMinutesAllTime: youtubeResult.value.allTime.totalMinutes,
+            totalMinutesMonth: youtubeResult.value.thisMonth.totalMinutes,
+            allTimeItems: youtubeResult.value.allTime.items,
+            monthItems: youtubeResult.value.thisMonth.items,
+          },
+        }
+      : youtubeResult;
 
   const monthLabel = new Date().toLocaleDateString("fr-FR", {
     month: "long",
@@ -71,75 +168,24 @@ export default async function DashboardPage() {
         Stats de divertissement
       </p>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">Jeux vidéo (Steam)</h2>
-        {steamResult.status === "rejected" ? (
-          <div className="mt-4">
-            <ErrorCard
-              title="Impossible de charger les données Steam."
-              message={errorMessage(steamResult.reason)}
-            />
-          </div>
-        ) : (
-          <>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <StatCard
-                label="Temps de jeu total (all-time)"
-                value={formatMinutes(steamResult.value.allTime.totalMinutes)}
-              />
-              <StatCard
-                label={`Ce mois-ci (${monthLabel})`}
-                value={formatMinutes(steamResult.value.thisMonth.totalMinutes)}
-              />
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-4">
-              <BreakdownList
-                title="Répartition par jeu — ce mois-ci"
-                items={steamResult.value.thisMonth.games}
-              />
-              <BreakdownList
-                title="Répartition par jeu — all-time"
-                items={steamResult.value.allTime.games}
-              />
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">Séries &amp; films (Trakt)</h2>
-        {traktResult.status === "rejected" ? (
-          <div className="mt-4">
-            <ErrorCard
-              title="Impossible de charger les données Trakt."
-              message={errorMessage(traktResult.reason)}
-            />
-          </div>
-        ) : (
-          <>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <StatCard
-                label="Temps regardé total (all-time)"
-                value={formatMinutes(traktResult.value.allTime.totalMinutes)}
-              />
-              <StatCard
-                label={`Ce mois-ci (${monthLabel})`}
-                value={formatMinutes(traktResult.value.thisMonth.totalMinutes)}
-              />
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-4">
-              <BreakdownList
-                title="Répartition par série/film — ce mois-ci"
-                items={traktResult.value.thisMonth.items}
-              />
-              <BreakdownList
-                title="Répartition par série/film — all-time"
-                items={traktResult.value.allTime.items}
-              />
-            </div>
-          </>
-        )}
-      </section>
+      <SourceSection
+        title="Jeux vidéo (Steam)"
+        breakdownLabel="Répartition par jeu"
+        monthLabel={monthLabel}
+        result={steamData}
+      />
+      <SourceSection
+        title="Séries & films (Trakt)"
+        breakdownLabel="Répartition par série/film"
+        monthLabel={monthLabel}
+        result={traktData}
+      />
+      <SourceSection
+        title="YouTube"
+        breakdownLabel="Répartition par chaîne"
+        monthLabel={monthLabel}
+        result={youtubeData}
+      />
     </main>
   );
 }

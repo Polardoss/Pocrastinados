@@ -6,6 +6,11 @@ export interface BreakdownItem {
   minutes: number;
 }
 
+function startOfCurrentMonthIso(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
 export interface SteamDashboardData {
   allTime: {
     totalMinutes: number;
@@ -42,10 +47,7 @@ export async function getSteamDashboardData(): Promise<SteamDashboardData> {
     minutes: row.playtime_forever_minutes,
   }));
 
-  const now = new Date();
-  const monthStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
-  ).toISOString();
+  const monthStart = startOfCurrentMonthIso();
 
   const { data: sessions, error: sessionsError } = await supabase
     .from("steam_sessions")
@@ -142,10 +144,7 @@ export async function getTraktDashboardData(): Promise<TraktDashboardData> {
     throw new Error(`Failed to load Trakt watches: ${allError.message}`);
   }
 
-  const now = new Date();
-  const monthStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
-  ).toISOString();
+  const monthStart = startOfCurrentMonthIso();
 
   const { data: monthRows, error: monthError } = await supabase
     .from("trakt_watches")
@@ -168,6 +167,91 @@ export async function getTraktDashboardData(): Promise<TraktDashboardData> {
     thisMonth: {
       totalMinutes: monthItems.reduce((sum, item) => sum + item.minutes, 0),
       totalItems: monthRows?.length ?? 0,
+      items: monthItems.slice(0, 15),
+      periodStart: monthStart,
+    },
+  };
+}
+
+export interface YoutubeDashboardData {
+  allTime: {
+    totalMinutes: number;
+    totalVideos: number;
+    items: BreakdownItem[];
+  };
+  thisMonth: {
+    totalMinutes: number;
+    totalVideos: number;
+    items: BreakdownItem[];
+    periodStart: string;
+  };
+}
+
+interface YoutubeEventRow {
+  channel_name: string | null;
+  duration_seconds: number | null;
+}
+
+function aggregateYoutubeRows(rows: YoutubeEventRow[]): BreakdownItem[] {
+  const totals = new Map<string, BreakdownItem>();
+
+  for (const row of rows) {
+    const label = row.channel_name?.trim() || "Chaîne inconnue";
+    const key = `channel:${label}`;
+    const minutes = (row.duration_seconds ?? 0) / 60;
+
+    const existing = totals.get(key);
+    if (existing) {
+      existing.minutes += minutes;
+    } else {
+      totals.set(key, { key, label, minutes });
+    }
+  }
+
+  return Array.from(totals.values())
+    .map((item) => ({ ...item, minutes: Math.round(item.minutes) }))
+    .sort((a, b) => b.minutes - a.minutes);
+}
+
+/**
+ * Events are pushed by the Chrome extension (see /api/ingest/youtube), one
+ * per video watched, already deduplicated at the source. Like Trakt, this
+ * is an append-only log so "this month" is just a date filter.
+ */
+export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: allRows, error: allError } = await supabase
+    .from("youtube_events")
+    .select("channel_name, duration_seconds");
+
+  if (allError) {
+    throw new Error(`Failed to load YouTube events: ${allError.message}`);
+  }
+
+  const monthStart = startOfCurrentMonthIso();
+
+  const { data: monthRows, error: monthError } = await supabase
+    .from("youtube_events")
+    .select("channel_name, duration_seconds")
+    .gte("watched_at", monthStart);
+
+  if (monthError) {
+    throw new Error(`Failed to load YouTube events for this month: ${monthError.message}`);
+  }
+
+  const allTimeItems = aggregateYoutubeRows(allRows ?? []);
+  const monthItems = aggregateYoutubeRows(monthRows ?? []);
+
+  return {
+    allTime: {
+      totalMinutes: allTimeItems.reduce((sum, item) => sum + item.minutes, 0),
+      totalVideos: allRows?.length ?? 0,
+      items: allTimeItems.slice(0, 15),
+    },
+    thisMonth: {
+      totalMinutes: monthItems.reduce((sum, item) => sum + item.minutes, 0),
+      totalVideos: monthRows?.length ?? 0,
       items: monthItems.slice(0, 15),
       periodStart: monthStart,
     },
