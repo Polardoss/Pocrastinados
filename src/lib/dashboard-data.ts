@@ -192,10 +192,18 @@ interface YoutubeEventRow {
   video_url: string | null;
   video_title: string;
   channel_name: string | null;
+  topic_name: string | null;
   duration_seconds: number | null;
 }
 
-const YOUTUBE_EVENT_COLUMNS = "video_url, video_title, channel_name, duration_seconds";
+const YOUTUBE_EVENT_COLUMNS = "video_url, video_title, channel_name, topic_name, duration_seconds";
+
+function youtubeSublabel(row: YoutubeEventRow): string | undefined {
+  const parts = [row.channel_name?.trim(), row.topic_name?.trim() ? `🎮 ${row.topic_name.trim()}` : null].filter(
+    (part): part is string => Boolean(part)
+  );
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
 
 /**
  * Groups by video, not by row: the extension reports a chunk every ~60s
@@ -213,11 +221,12 @@ function aggregateYoutubeRows(rows: YoutubeEventRow[]): BreakdownItem[] {
     const existing = totals.get(key);
     if (existing) {
       existing.minutes += minutes;
+      if (!existing.sublabel) existing.sublabel = youtubeSublabel(row);
     } else {
       totals.set(key, {
         key,
         label: row.video_title,
-        sublabel: row.channel_name?.trim() || undefined,
+        sublabel: youtubeSublabel(row),
         minutes,
       });
     }

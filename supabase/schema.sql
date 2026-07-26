@@ -97,6 +97,9 @@ create table if not exists youtube_events (
   video_title text not null,
   channel_name text,
   video_url text,
+  -- Best-effort: whatever game/movie/music YouTube itself auto-recognizes
+  -- for the video (the "info card" under the description), when present.
+  topic_name text,
   duration_seconds integer,
   watched_at timestamptz not null default now(),
   source text not null default 'youtube',
@@ -104,6 +107,15 @@ create table if not exists youtube_events (
 );
 
 create index if not exists youtube_events_watched_at_idx on youtube_events (watched_at desc);
+
+-- The extension reports a chunk every ~60s while a video plays, and the
+-- Takeout importer runs may be re-run — dedupe on (video, timestamp) so
+-- neither path can double-insert the same row. Not partial: Postgres never
+-- treats NULLs as conflicting under a unique constraint, so rows with no
+-- video_url are naturally exempt already, and a plain (non-partial) index
+-- is what lets Supabase's upsert(..., { onConflict }) target it directly.
+create unique index if not exists youtube_events_dedupe_idx
+  on youtube_events (video_url, watched_at);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security

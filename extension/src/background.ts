@@ -5,6 +5,7 @@
 interface QueuedEvent {
   videoTitle: string;
   channelName: string;
+  topicName: string | null;
   videoUrl: string;
   durationSeconds: number;
   watchedAt: string;

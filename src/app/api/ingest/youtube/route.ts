@@ -24,6 +24,7 @@ function json(body: unknown, status = 200) {
 interface IncomingEvent {
   videoTitle?: unknown;
   channelName?: unknown;
+  topicName?: unknown;
   videoUrl?: unknown;
   durationSeconds?: unknown;
   watchedAt?: unknown;
@@ -32,6 +33,7 @@ interface IncomingEvent {
 interface ValidatedEvent {
   video_title: string;
   channel_name: string | null;
+  topic_name: string | null;
   video_url: string | null;
   duration_seconds: number;
   watched_at: string;
@@ -49,6 +51,7 @@ function validateEvent(event: IncomingEvent): ValidatedEvent | null {
   return {
     video_title: event.videoTitle.trim(),
     channel_name: typeof event.channelName === "string" ? event.channelName.trim() : null,
+    topic_name: typeof event.topicName === "string" ? event.topicName.trim() : null,
     video_url: typeof event.videoUrl === "string" ? event.videoUrl.trim() : null,
     duration_seconds: Math.round(event.durationSeconds),
     watched_at: watchedAtDate.toISOString(),

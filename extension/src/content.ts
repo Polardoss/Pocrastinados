@@ -7,6 +7,7 @@ interface WatchSession {
   videoId: string;
   title: string;
   channel: string;
+  topic: string | null;
   url: string;
   watchedSeconds: number;
   lastSampledAt: number;
@@ -42,6 +43,18 @@ function getChannelName(): string {
   return channelEl?.textContent?.trim() || "";
 }
 
+// Best-effort only: this reads the "Game"/"Music in this video" info card
+// YouTube shows under the description when it auto-recognizes the content.
+// It's absent on most videos, and the selector may need updating if
+// YouTube changes this section's markup — that's fine, it just degrades
+// to null rather than breaking anything else.
+function getTopicName(): string | null {
+  const topicEl = document.querySelector<HTMLElement>(
+    "ytd-rich-metadata-renderer #title, ytd-rich-metadata-renderer yt-formatted-string#title"
+  );
+  return topicEl?.textContent?.trim() || null;
+}
+
 function reportChunk(session: WatchSession): void {
   if (session.watchedSeconds < MIN_REPORTABLE_SECONDS) {
     console.log(
@@ -57,6 +70,7 @@ function reportChunk(session: WatchSession): void {
     payload: {
       videoTitle: session.title,
       channelName: session.channel,
+      topicName: session.topic,
       videoUrl: session.url,
       durationSeconds: Math.round(session.watchedSeconds),
       watchedAt: new Date().toISOString(),
@@ -94,6 +108,7 @@ function sampleWatchTime(): void {
       videoId,
       title: getVideoTitle(),
       channel: getChannelName(),
+      topic: getTopicName(),
       url: location.href,
       watchedSeconds: 0,
       lastSampledAt: Date.now(),
@@ -101,9 +116,10 @@ function sampleWatchTime(): void {
     console.log(`[Pocrastinados] now tracking "${currentSession.title}" (${videoId})`);
   }
 
-  // Title/channel metadata can load in async after the first sample.
+  // Title/channel/topic metadata can load in async after the first sample.
   if (!currentSession.title) currentSession.title = getVideoTitle();
   if (!currentSession.channel) currentSession.channel = getChannelName();
+  if (!currentSession.topic) currentSession.topic = getTopicName();
 
   const now = Date.now();
   const elapsedSeconds = (now - currentSession.lastSampledAt) / 1000;
