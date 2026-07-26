@@ -42,7 +42,12 @@ async function flushQueue(): Promise<void> {
     "ingestSecret",
   ])) as StoredSettings;
 
-  if (!ingestUrl || !ingestSecret) return;
+  if (!ingestUrl || !ingestSecret) {
+    console.warn(
+      `[Pocrastinados] ${queue.length} event(s) queued but ingestUrl/ingestSecret aren't set — open the extension's options page.`
+    );
+    return;
+  }
 
   try {
     const res = await fetch(ingestUrl, {
@@ -55,10 +60,20 @@ async function flushQueue(): Promise<void> {
     });
 
     if (res.ok) {
+      const result = await res.json().catch(() => null);
+      console.log(`[Pocrastinados] flushed ${queue.length} event(s):`, result);
       await setQueue([]);
+    } else {
+      const body = await res.text().catch(() => "");
+      console.error(
+        `[Pocrastinados] ingest request failed: HTTP ${res.status} ${res.statusText} — ${body}. Queue kept for retry.`
+      );
     }
-  } catch {
-    // Offline or endpoint unreachable — keep the queue for the next alarm.
+  } catch (error) {
+    console.error(
+      "[Pocrastinados] ingest request threw (network/CORS/permission issue). Queue kept for retry.",
+      error
+    );
   }
 }
 

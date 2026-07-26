@@ -15,13 +15,11 @@ async function load(): Promise<void> {
   if (secretInput) secretInput.value = ingestSecret ?? "";
 }
 
-function showStatus(message: string): void {
+function showStatus(message: string, isError = false): void {
   const status = document.getElementById("status");
   if (!status) return;
   status.textContent = message;
-  setTimeout(() => {
-    status.textContent = "";
-  }, 2000);
+  status.classList.toggle("error", isError);
 }
 
 document.getElementById("save")?.addEventListener("click", async () => {
@@ -34,6 +32,47 @@ document.getElementById("save")?.addEventListener("click", async () => {
   });
 
   showStatus("Enregistré.");
+});
+
+// Sends an empty event batch: exercises permissions/CORS/auth/reachability
+// without writing anything to the database (the route returns early on an
+// empty events array, before touching Supabase).
+document.getElementById("test")?.addEventListener("click", async () => {
+  const urlInput = document.getElementById("ingestUrl") as HTMLInputElement;
+  const secretInput = document.getElementById("ingestSecret") as HTMLInputElement;
+  const ingestUrl = urlInput.value.trim();
+  const ingestSecret = secretInput.value.trim();
+
+  if (!ingestUrl || !ingestSecret) {
+    showStatus("Renseigne l'URL et le secret avant de tester.", true);
+    return;
+  }
+
+  showStatus("Test en cours…");
+
+  try {
+    const res = await fetch(ingestUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ingestSecret}` },
+      body: JSON.stringify({ events: [] }),
+    });
+
+    if (res.status === 401) {
+      showStatus("Échec : secret refusé (401). Vérifie qu'il correspond à YOUTUBE_INGEST_SECRET sur Vercel.", true);
+    } else if (res.status === 500) {
+      const body = await res.text().catch(() => "");
+      showStatus(`Échec : le serveur signale une erreur 500. ${body}`, true);
+    } else if (res.ok) {
+      showStatus("OK — la connexion et le secret fonctionnent.");
+    } else {
+      showStatus(`Échec : HTTP ${res.status} ${res.statusText}`, true);
+    }
+  } catch (error) {
+    showStatus(
+      `Échec réseau : ${error instanceof Error ? error.message : String(error)} — probablement bloqué par les permissions de l'extension (host_permissions) ou par CORS.`,
+      true
+    );
+  }
 });
 
 load();

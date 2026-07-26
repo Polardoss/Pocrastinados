@@ -36,8 +36,13 @@
       #status {
         font-size: 12px;
         color: #16a34a;
-        height: 16px;
+        min-height: 32px;
+        white-space: pre-wrap;
       }
+      #status.error { color: #dc2626; }
+      .row { display: flex; gap: 8px; }
+      .row button { flex: 1; }
+      #test { background: #f3f4f6; }
     </style>
   </head>
   <body>
@@ -54,7 +59,10 @@
       Secret
       <input id="ingestSecret" type="password" placeholder="YOUTUBE_INGEST_SECRET" />
     </label>
-    <button id="save">Enregistrer</button>
+    <div class="row">
+      <button id="save">Enregistrer</button>
+      <button id="test" type="button">Tester la connexion</button>
+    </div>
     <p id="status"></p>
     <script src="options.js"></script>
   </body>
