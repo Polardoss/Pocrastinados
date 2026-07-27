@@ -11,7 +11,8 @@
     "fetch:trakt": "tsx scripts/fetch-trakt.ts",
     "trakt:authorize": "tsx scripts/trakt-authorize.ts",
     "build:extension": "tsx scripts/build-extension.ts",
-    "import:youtube-history": "tsx scripts/import-youtube-takeout.ts"
+    "import:youtube-history": "tsx scripts/import-youtube-takeout.ts",
+    "import:netflix-to-trakt": "tsx scripts/import-netflix-to-trakt.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
