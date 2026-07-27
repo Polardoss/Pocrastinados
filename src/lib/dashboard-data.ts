@@ -12,6 +12,36 @@ function startOfCurrentMonthIso(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
+const SELECT_PAGE_SIZE = 1000;
+
+/**
+ * Supabase/PostgREST caps a plain .select() at 1000 rows with no error or
+ * warning — trakt_watches and youtube_events routinely exceed that once
+ * there's real history (confirmed directly: a table with 4656 rows returned
+ * exactly 1000 from an unpaginated select). Every query here that isn't
+ * already scoped to a single day/week/month has to page through with
+ * .range() or it silently under-reports.
+ */
+async function selectAllRows<T>(
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  errorContext: string
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery(from, from + SELECT_PAGE_SIZE - 1);
+    if (error) throw new Error(`${errorContext}: ${error.message}`);
+    if (!data || data.length === 0) break;
+
+    all.push(...data);
+    if (data.length < SELECT_PAGE_SIZE) break;
+    from += SELECT_PAGE_SIZE;
+  }
+
+  return all;
+}
+
 export interface SteamDashboardData {
   allTime: {
     totalMinutes: number;
@@ -136,38 +166,32 @@ function aggregateTraktRows(rows: TraktWatchRow[]): BreakdownItem[] {
  */
 export async function getTraktDashboardData(): Promise<TraktDashboardData> {
   const supabase = getSupabaseAdmin();
+  const columns = "title, media_type, show_title, duration_minutes";
 
-  const { data: allRows, error: allError } = await supabase
-    .from("trakt_watches")
-    .select("title, media_type, show_title, duration_minutes");
-
-  if (allError) {
-    throw new Error(`Failed to load Trakt watches: ${allError.message}`);
-  }
+  const allRows = await selectAllRows<TraktWatchRow>(
+    (from, to) => supabase.from("trakt_watches").select(columns).range(from, to),
+    "Failed to load Trakt watches"
+  );
 
   const monthStart = startOfCurrentMonthIso();
 
-  const { data: monthRows, error: monthError } = await supabase
-    .from("trakt_watches")
-    .select("title, media_type, show_title, duration_minutes")
-    .gte("watched_at", monthStart);
+  const monthRows = await selectAllRows<TraktWatchRow>(
+    (from, to) => supabase.from("trakt_watches").select(columns).gte("watched_at", monthStart).range(from, to),
+    "Failed to load Trakt watches for this month"
+  );
 
-  if (monthError) {
-    throw new Error(`Failed to load Trakt watches for this month: ${monthError.message}`);
-  }
-
-  const allTimeItems = aggregateTraktRows(allRows ?? []);
-  const monthItems = aggregateTraktRows(monthRows ?? []);
+  const allTimeItems = aggregateTraktRows(allRows);
+  const monthItems = aggregateTraktRows(monthRows);
 
   return {
     allTime: {
       totalMinutes: allTimeItems.reduce((sum, item) => sum + item.minutes, 0),
-      totalItems: allRows?.length ?? 0,
+      totalItems: allRows.length,
       items: allTimeItems.slice(0, 15),
     },
     thisMonth: {
       totalMinutes: monthItems.reduce((sum, item) => sum + item.minutes, 0),
-      totalItems: monthRows?.length ?? 0,
+      totalItems: monthRows.length,
       items: monthItems.slice(0, 15),
       periodStart: monthStart,
     },
@@ -247,27 +271,21 @@ function aggregateYoutubeRows(rows: YoutubeEventRow[]): BreakdownItem[] {
 export async function getYoutubeDashboardData(): Promise<YoutubeDashboardData> {
   const supabase = getSupabaseAdmin();
 
-  const { data: allRows, error: allError } = await supabase
-    .from("youtube_events")
-    .select(YOUTUBE_EVENT_COLUMNS);
-
-  if (allError) {
-    throw new Error(`Failed to load YouTube events: ${allError.message}`);
-  }
+  const allRows = await selectAllRows<YoutubeEventRow>(
+    (from, to) => supabase.from("youtube_events").select(YOUTUBE_EVENT_COLUMNS).range(from, to),
+    "Failed to load YouTube events"
+  );
 
   const monthStart = startOfCurrentMonthIso();
 
-  const { data: monthRows, error: monthError } = await supabase
-    .from("youtube_events")
-    .select(YOUTUBE_EVENT_COLUMNS)
-    .gte("watched_at", monthStart);
+  const monthRows = await selectAllRows<YoutubeEventRow>(
+    (from, to) =>
+      supabase.from("youtube_events").select(YOUTUBE_EVENT_COLUMNS).gte("watched_at", monthStart).range(from, to),
+    "Failed to load YouTube events for this month"
+  );
 
-  if (monthError) {
-    throw new Error(`Failed to load YouTube events for this month: ${monthError.message}`);
-  }
-
-  const allTimeItems = aggregateYoutubeRows(allRows ?? []);
-  const monthItems = aggregateYoutubeRows(monthRows ?? []);
+  const allTimeItems = aggregateYoutubeRows(allRows);
+  const monthItems = aggregateYoutubeRows(monthRows);
 
   return {
     allTime: {
@@ -308,21 +326,27 @@ export async function getActivityHeatmap(daysBack = 364): Promise<HeatmapDay[]> 
   since.setUTCHours(0, 0, 0, 0);
   const sinceIso = since.toISOString();
 
-  const [steamRes, traktRes, youtubeRes] = await Promise.all([
-    supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso),
-    supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso),
-    supabase.from("youtube_events").select("duration_seconds, watched_at").gte("watched_at", sinceIso),
+  const [steamRows, traktRows, youtubeRows] = await Promise.all([
+    selectAllRows<{ minutes_played: number; period_end: string }>(
+      (from, to) =>
+        supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso).range(from, to),
+      "Failed to load Steam sessions for heatmap"
+    ),
+    selectAllRows<{ duration_minutes: number | null; watched_at: string }>(
+      (from, to) =>
+        supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso).range(from, to),
+      "Failed to load Trakt watches for heatmap"
+    ),
+    selectAllRows<{ duration_seconds: number | null; watched_at: string }>(
+      (from, to) =>
+        supabase
+          .from("youtube_events")
+          .select("duration_seconds, watched_at")
+          .gte("watched_at", sinceIso)
+          .range(from, to),
+      "Failed to load YouTube events for heatmap"
+    ),
   ]);
-
-  if (steamRes.error) {
-    throw new Error(`Failed to load Steam sessions for heatmap: ${steamRes.error.message}`);
-  }
-  if (traktRes.error) {
-    throw new Error(`Failed to load Trakt watches for heatmap: ${traktRes.error.message}`);
-  }
-  if (youtubeRes.error) {
-    throw new Error(`Failed to load YouTube events for heatmap: ${youtubeRes.error.message}`);
-  }
 
   const minutesByDay = new Map<string, number>();
   const addMinutes = (dateIso: string, minutes: number) => {
@@ -331,9 +355,9 @@ export async function getActivityHeatmap(daysBack = 364): Promise<HeatmapDay[]> 
     minutesByDay.set(key, (minutesByDay.get(key) ?? 0) + minutes);
   };
 
-  for (const row of steamRes.data ?? []) addMinutes(row.period_end, row.minutes_played);
-  for (const row of traktRes.data ?? []) addMinutes(row.watched_at, row.duration_minutes ?? 0);
-  for (const row of youtubeRes.data ?? []) {
+  for (const row of steamRows) addMinutes(row.period_end, row.minutes_played);
+  for (const row of traktRows) addMinutes(row.watched_at, row.duration_minutes ?? 0);
+  for (const row of youtubeRows) {
     addMinutes(row.watched_at, (row.duration_seconds ?? 0) / 60);
   }
 
@@ -402,36 +426,41 @@ export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> 
   const supabase = getSupabaseAdmin();
   const { start, end, label } = monthKeyRange(monthKey);
 
-  const [steamRes, traktRes, youtubeRes] = await Promise.all([
-    supabase
-      .from("steam_sessions")
-      .select("steam_appid, game_name, minutes_played")
-      .gte("period_end", start)
-      .lt("period_end", end),
-    supabase
-      .from("trakt_watches")
-      .select("title, media_type, show_title, duration_minutes")
-      .gte("watched_at", start)
-      .lt("watched_at", end),
-    supabase
-      .from("youtube_events")
-      .select(YOUTUBE_EVENT_COLUMNS)
-      .gte("watched_at", start)
-      .lt("watched_at", end),
+  const [steamRows, traktRows, youtubeRows] = await Promise.all([
+    selectAllRows<{ steam_appid: number; game_name: string; minutes_played: number }>(
+      (from, to) =>
+        supabase
+          .from("steam_sessions")
+          .select("steam_appid, game_name, minutes_played")
+          .gte("period_end", start)
+          .lt("period_end", end)
+          .range(from, to),
+      "Failed to load Steam sessions for Wrapped"
+    ),
+    selectAllRows<TraktWatchRow>(
+      (from, to) =>
+        supabase
+          .from("trakt_watches")
+          .select("title, media_type, show_title, duration_minutes")
+          .gte("watched_at", start)
+          .lt("watched_at", end)
+          .range(from, to),
+      "Failed to load Trakt watches for Wrapped"
+    ),
+    selectAllRows<YoutubeEventRow>(
+      (from, to) =>
+        supabase
+          .from("youtube_events")
+          .select(YOUTUBE_EVENT_COLUMNS)
+          .gte("watched_at", start)
+          .lt("watched_at", end)
+          .range(from, to),
+      "Failed to load YouTube events for Wrapped"
+    ),
   ]);
 
-  if (steamRes.error) {
-    throw new Error(`Failed to load Steam sessions for Wrapped: ${steamRes.error.message}`);
-  }
-  if (traktRes.error) {
-    throw new Error(`Failed to load Trakt watches for Wrapped: ${traktRes.error.message}`);
-  }
-  if (youtubeRes.error) {
-    throw new Error(`Failed to load YouTube events for Wrapped: ${youtubeRes.error.message}`);
-  }
-
   const steamTotals = new Map<number, BreakdownItem>();
-  for (const row of steamRes.data ?? []) {
+  for (const row of steamRows) {
     const existing = steamTotals.get(row.steam_appid);
     if (existing) {
       existing.minutes += row.minutes_played;
@@ -446,13 +475,11 @@ export async function getMonthlyWrapped(monthKey: string): Promise<WrappedData> 
   const steamItems = Array.from(steamTotals.values()).sort((a, b) => b.minutes - a.minutes);
   const steamTotalMinutes = steamItems.reduce((sum, item) => sum + item.minutes, 0);
 
-  const traktRows = traktRes.data ?? [];
   const traktItems = aggregateTraktRows(traktRows);
   const traktTotalMinutes = traktItems.reduce((sum, item) => sum + item.minutes, 0);
   const movieCount = traktRows.filter((row) => row.media_type === "movie").length;
   const episodeCount = traktRows.filter((row) => row.media_type === "episode").length;
 
-  const youtubeRows = youtubeRes.data ?? [];
   const youtubeItems = aggregateYoutubeRows(youtubeRows);
   const youtubeTotalMinutes = youtubeItems.reduce((sum, item) => sum + item.minutes, 0);
 
@@ -506,23 +533,27 @@ export async function getWeeklyCategoryBreakdown(
   sinceWeekStart.setUTCDate(sinceWeekStart.getUTCDate() - (weeksBack - 1) * 7);
   const sinceIso = sinceWeekStart.toISOString();
 
-  const [steamRes, traktRes, youtubeRes] = await Promise.all([
-    supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso),
-    supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso),
-    supabase.from("youtube_events").select("duration_seconds, watched_at").gte("watched_at", sinceIso),
+  const [steamRows, traktRows, youtubeRows] = await Promise.all([
+    selectAllRows<{ minutes_played: number; period_end: string }>(
+      (from, to) =>
+        supabase.from("steam_sessions").select("minutes_played, period_end").gte("period_end", sinceIso).range(from, to),
+      "Failed to load Steam sessions for weekly breakdown"
+    ),
+    selectAllRows<{ duration_minutes: number | null; watched_at: string }>(
+      (from, to) =>
+        supabase.from("trakt_watches").select("duration_minutes, watched_at").gte("watched_at", sinceIso).range(from, to),
+      "Failed to load Trakt watches for weekly breakdown"
+    ),
+    selectAllRows<{ duration_seconds: number | null; watched_at: string }>(
+      (from, to) =>
+        supabase
+          .from("youtube_events")
+          .select("duration_seconds, watched_at")
+          .gte("watched_at", sinceIso)
+          .range(from, to),
+      "Failed to load YouTube events for weekly breakdown"
+    ),
   ]);
-
-  if (steamRes.error) {
-    throw new Error(`Failed to load Steam sessions for weekly breakdown: ${steamRes.error.message}`);
-  }
-  if (traktRes.error) {
-    throw new Error(`Failed to load Trakt watches for weekly breakdown: ${traktRes.error.message}`);
-  }
-  if (youtubeRes.error) {
-    throw new Error(
-      `Failed to load YouTube events for weekly breakdown: ${youtubeRes.error.message}`
-    );
-  }
 
   const weeks = new Map<string, WeeklyCategoryBreakdown>();
   for (let i = 0; i < weeksBack; i++) {
@@ -543,11 +574,11 @@ export async function getWeeklyCategoryBreakdown(
     if (bucket) bucket[field] += minutes;
   };
 
-  for (const row of steamRes.data ?? []) addTo(row.period_end, "steamMinutes", row.minutes_played);
-  for (const row of traktRes.data ?? []) {
+  for (const row of steamRows) addTo(row.period_end, "steamMinutes", row.minutes_played);
+  for (const row of traktRows) {
     addTo(row.watched_at, "traktMinutes", row.duration_minutes ?? 0);
   }
-  for (const row of youtubeRes.data ?? []) {
+  for (const row of youtubeRows) {
     addTo(row.watched_at, "youtubeMinutes", (row.duration_seconds ?? 0) / 60);
   }
 
